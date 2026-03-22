@@ -1,0 +1,67 @@
+// ===============================================================
+// Assumed Data Model
+// ===============================================================
+//
+// Collection: activities
+// Document ID: auto-generated
+// Fields:
+//   - activityName: string (required) - Name of the activity
+//   - learningArea: string (required) - One of the 8 learning areas
+//   - uploaderName: string (required) - Name of the person who uploaded
+//   - imageUrls: list (required) - List of base64 encoded images or URLs
+//   - createdAt: timestamp (required) - Creation time
+//   - authorUid: string (required) - UID of the uploader
+//
+// ===============================================================
+
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // ===============================================================
+    // Helper Functions
+    // ===============================================================
+    
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+
+    function isOwner(userId) {
+      return isAuthenticated() && request.auth.uid == userId;
+    }
+
+    function isValidActivity(data) {
+      return data.activityName is string && data.activityName.size() > 0 && data.activityName.size() < 200 &&
+             data.learningArea in [
+               "ภาษาไทย", "คณิตศาสตร์", "วิทยาศาสตร์และเทคโนโลยี", 
+               "สังคมศึกษา ศาสนา และวัฒนธรรม", "สุขศึกษาและพลศึกษา", 
+               "ศิลปะ", "การงานอาชีพ", "ภาษาต่างประเทศ"
+             ] &&
+             data.uploaderName is string && data.uploaderName.size() > 0 && data.uploaderName.size() < 100 &&
+             data.description is string && data.description.size() < 1000 &&
+             data.imageUrls is list && data.imageUrls.size() > 0 && data.imageUrls.size() <= 20 && // Limit to 20 images per album
+             data.createdAt is timestamp &&
+             data.authorUid == request.auth.uid;
+    }
+
+    // ===============================================================
+    // Rules
+    // ===============================================================
+
+    match /activities/{activityId} {
+      // Anyone authenticated can read the gallery
+      allow read: if isAuthenticated();
+      
+      // Only authenticated users can create activities
+      allow create: if isAuthenticated() && isValidActivity(request.resource.data);
+      
+      // Only the author can update or delete their own activity
+      allow update: if isAuthenticated() && isOwner(resource.data.authorUid) && isValidActivity(request.resource.data);
+      allow delete: if isAuthenticated() && isOwner(resource.data.authorUid);
+    }
+
+    match /users/{userId} {
+      allow read, write: if isOwner(userId);
+    }
+  }
+}
